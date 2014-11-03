@@ -75,6 +75,8 @@ check_token( char *token, int position, int line_num)
       }
       else if ( token[0] == 'c' )
         token[0] = 'C';
+      else if ( token[0] == 'r' )
+        token[0] = 'R';
       else if ( token[0] == 'i' || token[0] == 'I' ) {
         i_elements_counter++;
         token[0] = 'I';

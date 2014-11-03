@@ -1655,6 +1655,25 @@ int cs_entry(cs *T, int i, int j, double x) {
 	return (1);
 }
 
+int cs_add_to_entry(cs *T, int i, int j, double x)
+{
+  int c;
+
+  if ( !CS_TRIPLET(T) || i < 0 || j < 0 )
+    return 0;
+
+  if ( T->nz >= T->nzmax && !cs_sprealloc(T, 2 * (T->nzmax)))
+    return 0;
+  
+  for ( c = 0 ; c < T->nz; c++ ) 
+    if ( T->i[c] == i && T->p[c] == j ) {
+      T->x[c]+= x;
+      return 1;
+    }
+ 
+  return cs_entry(T, i,j, x);
+}
+
 cs *cs_load(char *matrixFilename) {
 
 	double i, j; /* use double for integers to avoid csi conflicts */

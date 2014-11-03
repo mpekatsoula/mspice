@@ -8,7 +8,8 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_permutation.h>
 #include <math.h>
-
+#include <omp.h>
+#include <time.h>
 /* File handlers for data, and plot */
 FILE *fp, *fp2,*fp3, *pipe;
 
@@ -24,9 +25,6 @@ void BE_sparse ( char **unknown_vars )
   gsl_vector *x;
   gsl_vector *e;
   double h = NetOptions->TRAN_step;
-
-
-
 
 }
 
@@ -397,11 +395,14 @@ double norm ( const double *v )
   
   int i;
   double m_sum = 0.0;
-  for ( i = 0; i < MNA_matrix_size; i++ )
-    m_sum  += v[i]*v[i];
+  double max = fabs(v[0]);
+  for ( i = 1; i < MNA_matrix_size; i++ )
+    if ( fabs(v[i]) > max )
+      max = fabs(v[i]);
+    //m_sum  += v[i]*v[i];
 
-  return sqrt(m_sum);
-
+  //return sqrt(m_sum);
+  return max;
 
 }
 
@@ -526,9 +527,6 @@ void LU_Sparse(char **unknown_vars)
 
   /* File handlers for data, and plot */
   fp = fopen( "LU_solution.txt", "w" );
-  //fp2 = fopen( "Plot Values.txt", "w" );
-  //if ( !GNUPLOT )
-   // pipe = popen("gnuplot -persist", "w");
 
   /* Temp buffers */
   css *S;
@@ -536,9 +534,9 @@ void LU_Sparse(char **unknown_vars)
   double *x;
   S = cs_malloc(MNA_matrix_size,sizeof(css *));
   N = cs_malloc(MNA_matrix_size,sizeof(csn *));
-  x = (double *) malloc ( sizeof(double) * MNA_matrix_size );
+  x = cs_malloc(MNA_matrix_size,sizeof(double));
   
-  S = cs_sqr (2, A, 0);
+  S = cs_sqr (2, A, 1);
   N = cs_lu ( A, S, 1);
   cs_ipvec ( N->pinv, b_sparse_vector, x, MNA_matrix_size );
 
@@ -560,6 +558,7 @@ void LU_Sparse(char **unknown_vars)
   cs_spfree ( A );
   cs_nfree ( N );
   cs_sfree ( S );
+  
 
 }
 
@@ -573,7 +572,7 @@ void Cholesky_Sparse()
   csn *N;
   double *x = malloc( sizeof(double) * MNA_matrix_size );
 
-
+  
   S = cs_schol ( 1, A );
   N = cs_chol ( A, S );
   
@@ -594,11 +593,23 @@ void Cholesky_Sparse()
 
 }
 
+clock_t start, end;
+
+void start_timer() {
+
+  start = clock();
+}
+
+double end_timer() {
+
+  return ((double)clock() - start ) / CLOCKS_PER_SEC;
+}
+
 void CG_Sparse( char **unknown_vars)
 {
 
   /* Local vars */
-  int i, iter;    
+  int i, iter,j,p1;    
   double norm_s, norm_r, rho, beta, rho1, alpha;
   fp = fopen( "CG_solution.txt", "w" );
 
@@ -611,20 +622,25 @@ void CG_Sparse( char **unknown_vars)
   double *M_inv;
 
   // initial guess, x = 0
+  #pragma omp parallel for
   for ( i = 0; i < MNA_matrix_size; i++ )
   {
     x[i] = 0;
     y[i] = 0;
     q[i] = 0;
   }
+start_timer();
 
-  // A*x
+  // y = A*x + y
   cs_gaxpy ( A, x, y );
+
+printf("cs_gaxpy %g\n",end_timer());
 
   // Get inv diagonal of A
   M_inv = diag(A);
 
   // r = b - A*x
+  #pragma omp parallel for
   for ( i = 0; i < MNA_matrix_size; i++ )
     r[i] = b_sparse_vector[i] - y[i];
 
@@ -636,44 +652,47 @@ void CG_Sparse( char **unknown_vars)
   norm_s = norm ( b_sparse_vector );
   if ( !norm_s )
     norm_s = 1;
-
+start_timer();
   /* Main loop */
-  while (norm_r/norm_s > NetOptions->ITOL && iter < MNA_matrix_size )
+  while (norm_r/norm_s > atof("1e-6") && iter < MNA_matrix_size )
   {
 
     iter++;
-printf("iter MNA%d %d\n", iter, MNA_matrix_size);
+
     // solve M*z = r
     // Multiply M^-1 with r. z[i] = (1/(a[i][i]))*r[i]
     // rho = (r^T)*z
     rho = 0;
+    //#pragma omp parallel for reduction(+:rho)
     for ( i = 0; i < MNA_matrix_size; i++ )
     {
       z[i] = M_inv[i]*r[i];
       rho +=  r[i]*z[i];
     }
 
-    if ( iter == 1 ) // p = z
-    {
+    if ( iter == 1 ) { 
       for ( i = 0; i < MNA_matrix_size; i++ )
-        p[i] = z[i];
+        p[i] = z[i];  
     }
-    else
-    {
+    else {
       beta = rho/rho1;
       // p = z + beta*p
+      //#pragma omp parallel for
       for ( i = 0; i < MNA_matrix_size; i++ )
         p[i] = p[i]*beta + z[i];
-      
     }
 
     rho1 = rho;
 
     // q = A*p
+    //#pragma omp parallel for
+    for ( i = 0; i < MNA_matrix_size; i++ )
+      q[i] = 0;
     cs_gaxpy ( A, p, q );
 
     // (p^T)*q
     alpha = 0;
+    //#pragma omp parallel for reduction(+:alpha)
     for ( i = 0; i < MNA_matrix_size; i++ )
       alpha +=  p[i]*q[i];
 
@@ -681,15 +700,23 @@ printf("iter MNA%d %d\n", iter, MNA_matrix_size);
     alpha = rho/alpha;
 
     // x = x + alpha*p
+    //#pragma omp parallel for 
     for ( i = 0; i < MNA_matrix_size; i++ )  
     {  
       x[i] += alpha*p[i];
       r[i] -= alpha*q[i];
     }
 
-  }
+    norm_r = norm( r );
 
+    if ( !(iter % 300) ) {
+      printf("Iterations done so far: %d\n", iter);
+      printf("norm_r: %g, res: %g\n\n\n",norm_r, x[0]);
+    }
+  }
+printf("total_time %gsec.\n",end_timer());
   /* Save solution to file */
+  printf("Iterations done: %d\n", iter);
   for ( i = 0; i < MNA_matrix_size; i++ )
     fprintf (fp, "%s: %g\n", unknown_vars[i], x[i]);
 
@@ -727,6 +754,7 @@ void Bi_CG_Sparse( char **unknown_vars )
   double *M_inv;
 
   // initial guess, x = 0
+  //#pragma omp parallel for
   for ( i = 0; i < MNA_matrix_size; i++ )
   {
     x[i] = 0;
@@ -743,6 +771,7 @@ void Bi_CG_Sparse( char **unknown_vars )
 
   // r = b - A*x
   // r~ = r
+  //#pragma omp parallel for
   for ( i = 0; i < MNA_matrix_size; i++ )
   {
     r[i] = b_sparse_vector[i] - y[i];
@@ -769,6 +798,7 @@ void Bi_CG_Sparse( char **unknown_vars )
     // z~ = r~*M^-T
     // rho = (z^T)*r_
     rho = 0;
+    //#pragma omp parallel for reduction(+:rho)
     for ( i = 0; i < MNA_matrix_size; i++ )
     {
       z[i] = r[i]*M_inv[i];
@@ -781,6 +811,7 @@ void Bi_CG_Sparse( char **unknown_vars )
 
     if ( iter == 1)
     {
+      //#pragma omp parallel for
       for ( i = 0; i < MNA_matrix_size; i++ )
       {
         p[i] = z[i];
@@ -793,6 +824,7 @@ void Bi_CG_Sparse( char **unknown_vars )
       beta = rho/rho1;
       // p = z + beta*p
       // p~ = z~ + beta*p~
+      //#pragma omp parallel for
       for ( i = 0; i < MNA_matrix_size; i++ )
       {
         p[i] = p[i]*beta + z[i];
@@ -804,6 +836,9 @@ void Bi_CG_Sparse( char **unknown_vars )
     rho1 = rho;
 
     // q = A*p
+    //#pragma omp parallel for
+    for ( i = 0; i < MNA_matrix_size; i++ )
+      q[i] = 0;
     cs_gaxpy ( A, p, q );
      
     // q~ = A^T*p~
@@ -811,6 +846,7 @@ void Bi_CG_Sparse( char **unknown_vars )
 
     // omega = (p_^T)*q
     omega = 0;
+    //#pragma omp parallel for reduction(+:omega)
     for ( i = 0; i < MNA_matrix_size; i++ )
       omega +=  p_[i]*q[i];
 
@@ -822,13 +858,19 @@ void Bi_CG_Sparse( char **unknown_vars )
     // x = x + alpha*p
     // r = r - alpha*q
     // r~ = r~ - alpha*q~
+    //#pragma omp parallel for
     for ( i = 0; i < MNA_matrix_size; i++ )
     {
       x[i] += alpha*p[i];
       r[i] -= alpha*q[i];
       r_[i] -= alpha*q_[i];
-    }      
+    }
 
+    norm_r = norm ( r );
+    if ( !(iter % 300) ) {
+      printf("Iterations done so far: %d\n", iter);
+      printf("norm_r: %g, res: %g\n\n\n",norm_r, x[0]);
+    }
   }
 
   /* Save solution to file */
@@ -1181,7 +1223,7 @@ void Bi_CG ( int DC_scan, char **unknown_vars )
       gsl_vector_memcpy (temp, q); 
       gsl_vector_scale ( temp , alpha );
       gsl_vector_sub ( r, temp );
-printf("rho %g\n",  rho);
+
       // r~ = r~ - alpha*q~
       gsl_vector_memcpy (temp, q_); 
       gsl_vector_scale ( temp , alpha );

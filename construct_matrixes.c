@@ -34,15 +34,6 @@ void matrix_operations ( int id1, int id2, double value )
 
 }
 
-void sparse_matrix_operations ( int i, int j, double value )
-{
-
-
-  cs_entry( MNA_sparse, i - 1, j - 1, 1.0/value);
-  
-  
-}
-
 void construct_matrixes ( void ) 
 {
  
@@ -50,7 +41,7 @@ void construct_matrixes ( void )
 
   /* Calculate matrix sizes */
   MNA_matrix_size = nodes_counter + voltage_elements_counter;
-  
+  printf("MNA matrix size: %d\n", MNA_matrix_size);  
   double temp;
   unsigned int volt_elements = 0;
   int i,j,k=0;
@@ -66,7 +57,7 @@ void construct_matrixes ( void )
   /* Sparce matrix calculations */
   if ( NetOptions->SPARSE )
   {
-    MNA_sparse = cs_spalloc( MNA_matrix_size, MNA_matrix_size, 10, 1, 1);
+    MNA_sparse = cs_spalloc( MNA_matrix_size, MNA_matrix_size,10, 1, 1);
     C_sparse = cs_spalloc( MNA_matrix_size, MNA_matrix_size, 10, 1, 1);
     b_sparse_vector = malloc ( sizeof(double) * MNA_matrix_size );
   }
@@ -95,7 +86,7 @@ void construct_matrixes ( void )
     /* Add conductances to the MNA matrix */
     if ( !strncmp( next_el->type, "R", sizeof(char)) )
     {
-      if ( next_el->node_1 != 0 )
+      if ( next_el->node_1 != 0  )
       {
         if ( !unknown_vars[next_el->node_1 - 1] )
         {
@@ -105,7 +96,7 @@ void construct_matrixes ( void )
         if ( !NetOptions->SPARSE )
           matrix_operations ( next_el->node_1, next_el->node_1, next_el->value );
         else
-          sparse_matrix_operations ( next_el->node_1, next_el->node_1, next_el->value );
+          cs_entry( MNA_sparse, next_el->node_1 - 1, next_el->node_1 - 1, (1.0/next_el->value));
       }
 
       if ( next_el->node_2 != 0 )
@@ -118,8 +109,9 @@ void construct_matrixes ( void )
         if ( !NetOptions->SPARSE )
           matrix_operations ( next_el->node_2, next_el->node_2, next_el->value );
         else
-          sparse_matrix_operations ( next_el->node_2, next_el->node_2, next_el->value );
+          cs_entry( MNA_sparse, next_el->node_2 - 1, next_el->node_2 - 1, (1.0/next_el->value));
       }
+
       if (( next_el->node_1 != 0 ) && ( next_el->node_2 != 0 ))
       { 
         if ( !NetOptions->SPARSE )
@@ -129,8 +121,8 @@ void construct_matrixes ( void )
         }
         else
         {
-          sparse_matrix_operations ( next_el->node_1, next_el->node_2, -(next_el->value) );
-          sparse_matrix_operations ( next_el->node_2, next_el->node_1, -(next_el->value) );
+          cs_entry( MNA_sparse, next_el->node_2 - 1, next_el->node_1 - 1, -(1.0/next_el->value));
+          cs_entry( MNA_sparse, next_el->node_1 - 1, next_el->node_2 - 1, -(1.0/next_el->value));
         }
       }
 
@@ -319,42 +311,6 @@ void construct_matrixes ( void )
     }
   }
 
- // printf("\n>C matrix:\n");
- // for ( i =0; i < MNA_matrix_size; i++){
-  //  for ( j =0; j < MNA_matrix_size; j++){
-     // fprintf ( stdout, "%6.4g\t", gsl_matrix_get( C, i, j));
- //   }
-    //fprintf ( stdout, "\n");
- // }
-
-  printf("\n>S vector:\n");
-  if ( !NetOptions->SPARSE )
-    gsl_vector_fprintf (stdout,  S_vector, "%g");
-  //else
-   // for ( i = 0; i < MNA_matrix_size; i++ )
-   //   fprintf( stdout, "%g\n", b_sparse_vector[i] );
- 
-  printf("\n>MNA matrix:\n");
-  
-
-  if ( !NetOptions->SPARSE )
-  {  
-    for ( i =0; i < MNA_matrix_size; i++){
-      for ( j =0; j < MNA_matrix_size; j++){
-        fprintf ( stdout, "%6.4g\t", gsl_matrix_get( MNA_matrix, i, j));
-      }
-      fprintf ( stdout, "\n");
-    }
-  }
-  else
-  {
-    int success = cs_print( MNA_sparse, "Sparse MNA matrix", 0 );
-    if ( success )
-      printf("\tSaved in \"Sparse MNA matrix\".\n");
-  }
-  
-  printf("\n\n");
-
   /* Solve system */
   printf(">Solution: \n");
     
@@ -370,7 +326,7 @@ void construct_matrixes ( void )
   if ( NetOptions->SPARSE ) {
     /* Compress MNA */
     A = cs_compress(MNA_sparse);
-    
+        
     /* Find duplicates */
     int success = cs_dupl ( A );
     if ( !success )
