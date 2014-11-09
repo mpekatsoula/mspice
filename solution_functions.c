@@ -622,7 +622,6 @@ void CG_Sparse( char **unknown_vars)
   double *M_inv;
 
   // initial guess, x = 0
-  #pragma omp parallel for
   for ( i = 0; i < MNA_matrix_size; i++ )
   {
     x[i] = 0;
@@ -640,7 +639,6 @@ printf("cs_gaxpy %g\n",end_timer());
   M_inv = diag(A);
 
   // r = b - A*x
-  #pragma omp parallel for
   for ( i = 0; i < MNA_matrix_size; i++ )
     r[i] = b_sparse_vector[i] - y[i];
 
@@ -709,10 +707,6 @@ start_timer();
 
     norm_r = norm( r );
 
-    if ( !(iter % 300) ) {
-      printf("Iterations done so far: %d\n", iter);
-      printf("norm_r: %g, res: %g\n\n\n",norm_r, x[0]);
-    }
   }
 printf("total_time %gsec.\n",end_timer());
   /* Save solution to file */
@@ -771,7 +765,6 @@ void Bi_CG_Sparse( char **unknown_vars )
 
   // r = b - A*x
   // r~ = r
-  //#pragma omp parallel for
   for ( i = 0; i < MNA_matrix_size; i++ )
   {
     r[i] = b_sparse_vector[i] - y[i];
@@ -785,7 +778,7 @@ void Bi_CG_Sparse( char **unknown_vars )
   norm_s = norm ( b_sparse_vector);
   if ( !norm_s )
     norm_s = 1;
-
+start_timer();
   /* main loop */
   while (norm_r/norm_s > NetOptions->ITOL && iter < MNA_matrix_size )
   {
@@ -867,11 +860,9 @@ void Bi_CG_Sparse( char **unknown_vars )
     }
 
     norm_r = norm ( r );
-    if ( !(iter % 300) ) {
-      printf("Iterations done so far: %d\n", iter);
-      printf("norm_r: %g, res: %g\n\n\n",norm_r, x[0]);
-    }
   }
+
+printf("total_time %gsec.\n",end_timer());
 
   /* Save solution to file */
   for ( i = 0; i < MNA_matrix_size; i++ )
