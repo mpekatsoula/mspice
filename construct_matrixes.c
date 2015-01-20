@@ -6,7 +6,7 @@
 #include "hms/solution_functions.h"
 #include <gsl/gsl_matrix.h>
 #include <unistd.h>
-
+#include "hms/cuda_spice.h"
 
 void
 check_gnuplot()
@@ -57,8 +57,8 @@ void construct_matrixes ( void )
   /* Sparce matrix calculations */
   if ( NetOptions->SPARSE )
   {
-    MNA_sparse = cs_spalloc( MNA_matrix_size, MNA_matrix_size,10, 1, 1);
-    C_sparse = cs_spalloc( MNA_matrix_size, MNA_matrix_size, 10, 1, 1);
+   // MNA_sparse = cs_spalloc( MNA_matrix_size, MNA_matrix_size,10, 1, 1);
+   // C_sparse = cs_spalloc( MNA_matrix_size, MNA_matrix_size, 10, 1, 1);
     b_sparse_vector = malloc ( sizeof(double) * MNA_matrix_size );
   }
   else
@@ -77,7 +77,10 @@ void construct_matrixes ( void )
   
   for ( i = 0; i < MNA_matrix_size; i++ )
     unknown_vars[i] = NULL;
- 
+
+  /* Initialize cuda */
+  cuda_init();
+
 
   /* Traverse the Element list */
   element *next_el = Element_list;
@@ -96,7 +99,10 @@ void construct_matrixes ( void )
         if ( !NetOptions->SPARSE )
           matrix_operations ( next_el->node_1, next_el->node_1, next_el->value );
         else
-          cs_entry( MNA_sparse, next_el->node_1 - 1, next_el->node_1 - 1, (1.0/next_el->value));
+            add_cuda_element ( next_el->node_1 - 1, next_el->node_1 - 1, (1.0/next_el->value) );
+//          cs_entry( MNA_sparse, next_el->node_1 - 1, next_el->node_1 - 1, (1.0/next_el->value));
+
+
       }
 
       if ( next_el->node_2 != 0 )
@@ -109,7 +115,8 @@ void construct_matrixes ( void )
         if ( !NetOptions->SPARSE )
           matrix_operations ( next_el->node_2, next_el->node_2, next_el->value );
         else
-          cs_entry( MNA_sparse, next_el->node_2 - 1, next_el->node_2 - 1, (1.0/next_el->value));
+          add_cuda_element ( next_el->node_2 - 1, next_el->node_2 - 1, (1.0/next_el->value) );
+//          cs_entry( MNA_sparse, next_el->node_2 - 1, next_el->node_2 - 1, (1.0/next_el->value));
       }
 
       if (( next_el->node_1 != 0 ) && ( next_el->node_2 != 0 ))
@@ -121,8 +128,10 @@ void construct_matrixes ( void )
         }
         else
         {
-          cs_entry( MNA_sparse, next_el->node_2 - 1, next_el->node_1 - 1, -(1.0/next_el->value));
-          cs_entry( MNA_sparse, next_el->node_1 - 1, next_el->node_2 - 1, -(1.0/next_el->value));
+          add_cuda_element ( next_el->node_2 - 1, next_el->node_1 - 1, -(1.0/next_el->value) );
+          add_cuda_element ( next_el->node_1 - 1, next_el->node_2 - 1, -(1.0/next_el->value) );
+          //cs_entry( MNA_sparse, next_el->node_2 - 1, next_el->node_1 - 1, -(1.0/next_el->value));
+          //cs_entry( MNA_sparse, next_el->node_1 - 1, next_el->node_2 - 1, -(1.0/next_el->value));
         }
       }
 
@@ -155,8 +164,10 @@ void construct_matrixes ( void )
         }
         else
         {
-          cs_entry( MNA_sparse, next_el->node_1 -1, index, 1);
-          cs_entry( MNA_sparse, index, next_el->node_1 - 1, 1);
+          add_cuda_element ( next_el->node_1 -1, index, 1 );
+          add_cuda_element ( index, next_el->node_1 - 1, 1 );
+          //cs_entry( MNA_sparse, next_el->node_1 -1, index, 1);
+          //cs_entry( MNA_sparse, index, next_el->node_1 - 1, 1);
         }
       }
  
@@ -169,8 +180,10 @@ void construct_matrixes ( void )
         }
         else
         {
-          cs_entry( MNA_sparse, next_el->node_2 - 1, index, -1);
-          cs_entry( MNA_sparse, index, next_el->node_2 - 1, -1);
+          add_cuda_element ( next_el->node_2 - 1, index, -1 );
+          add_cuda_element ( index, next_el->node_2 - 1, -1 );
+          //cs_entry( MNA_sparse, next_el->node_2 - 1, index, -1);
+          //cs_entry( MNA_sparse, index, next_el->node_2 - 1, -1);
         }
       }
       
@@ -183,7 +196,7 @@ void construct_matrixes ( void )
         }
         else {
           b_sparse_vector[index] = 0;
-
+         // add_cuda_b( index, 0 );
         }
 
       }
@@ -193,6 +206,7 @@ void construct_matrixes ( void )
          gsl_vector_set( S_vector, index, next_el->value);
         else
           b_sparse_vector[index] = next_el->value;
+       // add_cuda_b( index, next_el->value );
       }
 
       if ( NetOptions->DC )// Check for .DC
@@ -275,6 +289,7 @@ void construct_matrixes ( void )
           gsl_vector_set( S_vector, next_el->node_1 - 1, -(next_el->value));
         else
           b_sparse_vector[next_el->node_1 - 1] = -(next_el->value);
+          //add_cuda_b( next_el->node_1 - 1, -next_el->value );
 
         if ( NetOptions->DC ) // Check for .DC
           if ( !strcmp( NetOptions->DC_source_name, next_el->name ) &&  !strcmp( NetOptions->DC_type, "I" )  )
@@ -288,6 +303,7 @@ void construct_matrixes ( void )
           gsl_vector_set( S_vector, next_el->node_2 - 1, next_el->value);
         else
           b_sparse_vector[next_el->node_2 - 1] = next_el->value;
+         //add_cuda_b( next_el->node_2 - 1, next_el->value );
 
         if ( NetOptions->DC )// Check for .DC
           if ( !strcmp( NetOptions->DC_source_name, next_el->name  ) &&  !strcmp( NetOptions->DC_type, "I" ) ) 
@@ -313,7 +329,10 @@ void construct_matrixes ( void )
 
   /* Solve system */
   printf(">Solution: \n");
-    
+  cuda_implementation ();
+
+  exit(0);
+
   /* Check if gnuplot is installed only for DC scan */
   GNUPLOT = 1;
   if ( NetOptions->DC )

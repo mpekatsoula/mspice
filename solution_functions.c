@@ -864,6 +864,7 @@ start_timer();
 
 printf("total_time %gsec.\n",end_timer());
 
+  printf("Iterations done: %d\n", iter);
   /* Save solution to file */
   for ( i = 0; i < MNA_matrix_size; i++ )
     fprintf (fp, "%s: %g\n", unknown_vars[i], x[i]);

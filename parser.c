@@ -75,8 +75,10 @@ check_token( char *token, int position, int line_num)
       }
       else if ( token[0] == 'c' )
         token[0] = 'C';
-      else if ( token[0] == 'r' )
+      else if ( token[0] == 'r' || token[0] == 'R' ) {
         token[0] = 'R';
+        resistances++;
+      }
       else if ( token[0] == 'i' || token[0] == 'I' ) {
         i_elements_counter++;
         token[0] = 'I';
@@ -622,6 +624,7 @@ parser(char *filename)
     nodes_hashtable = ht_create( HASH_SIZE );
     nodes_counter = 0;
     voltage_elements_counter = 0;
+    resistances = 0;
     i_elements_counter = 0;
     
     /* Allocate memory for NetOptions and init */

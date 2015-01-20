@@ -16,6 +16,7 @@ int line_num;
 unsigned int nodes_counter;
 unsigned int voltage_elements_counter;
 unsigned int i_elements_counter;
+unsigned int resistances;
 
 #define OPTIONS_CASE 0xBEEF
 #define DC_CASE 0xBEF0
