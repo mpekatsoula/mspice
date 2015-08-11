@@ -1,9 +1,9 @@
 mspice
 ======
 
-Mspice is a spice circuit simulator with CUDA support
+Mspice is a spice circuit simulator with CUDA support.
 
-Supporting:
+Supports the following:
 
 • AC analysis (linear small-signal frequency domain analysis)
 
